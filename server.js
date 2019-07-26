@@ -2,14 +2,15 @@ const express = require("express")
 const app = express();
 const mongoose = require('mongoose');
 const bodyParser = require("body-parser")
-const passport = require('passport')
+
 const Userdata = require('./models/usermodel')
 const LocalStrategy = require('passport-local')
 const bcrypt = require('bcrypt-nodejs')
+const jwt=require('jsonwebtoken')
 
 const cors = require('cors')
-app.use(bodyParser.json())
-var loginsuccess = false;
+ 
+app.use(bodyParser.json());
 
 mongoose.connect("mongodb://localhost/myproject");
 
@@ -19,23 +20,27 @@ var corsOptions = {
 }
 
 app.use(cors(corsOptions))
+function verifyToken(req, res, next) {
+    if(!req.headers.authorization) {
+      return res.status(401).send('Unauthorized request')
+    }
+    let token = req.headers.authorization.split(' ')[1]
+    if(token === 'null') {
+      return res.status(401).send('Unauthorized request')    
+    }
+    let payload = jwt.verify(token, 'secretKey')
+    if(!payload) {
+      return res.status(401).send('Unauthorized request')    
+    }
+    req.userId = payload.subject
+    next()
+  }
+  
 
-//passport Configuration
-app.use(require("express-session")({
-    secret: "Rusty is the best dog",
-    resave: false,
-    saveUninitialized: false
-}))
-app.use(passport.initialize());
-app.use(passport.session());
-passport.use(new LocalStrategy(Userdata.authenticate()));
-passport.serializeUser(Userdata.serializeUser());
-passport.deserializeUser(Userdata.deserializeUser());
-
-app.route('/api/getusers').get((req, res) => {
+app.route('/api/getusers').get(verifyToken,(req, res) => {
 
 
-
+    
 
   
     Userdata.find({},function(err,data){
@@ -44,7 +49,8 @@ app.route('/api/getusers').get((req, res) => {
             console.log("error is there!")
         }else{
             
-            res.send(data);
+            res.json(data)
+            // res.send(data);
         }
     })
 
@@ -63,7 +69,7 @@ app.post('/api/addusers/', (req, res) => {
 
 
 
-
+                                           
     Userdata.findOne({ username: newuser.username }, function (err, data) {
         if (err) {
             console.log(err)
@@ -79,6 +85,10 @@ app.post('/api/addusers/', (req, res) => {
                 function (err, usersdata) {
                     if (err) {
                         console.log("There is an error!");
+                    }else{
+                        let payload={subject : usersdata._id}
+                        let token=jwt.sign(payload,'secretKey')
+                        res.status(200).send({token,name:usersdata.firstName});
                     }
 
                 }
@@ -98,9 +108,10 @@ app.post('/api/addusers/', (req, res) => {
 app.post("/api/afterlogin/", (req, res) => {
 
 
-
+    
     var email1 = req.body.email;
     var password1 = req.body.password;
+    console.log(password1)
     var value = false;
 
 
@@ -109,25 +120,30 @@ app.post("/api/afterlogin/", (req, res) => {
         if (err) {
             console.log(err);
         } if (!data) {
+            
             console.log("Sorry! email not found!")
+            res.status(400).json("Sorry! email not found")
         }
         else {
+            // var pass=bcrypt.hashSync('aditya123')
             // checking for password correction
-            value = bcrypt.compareSync(password1, data.password);
+            value = bcrypt.compareSync(req.body.password,data.password);
+   
             if (value) {
 
-                console.log(value);
-                console.log("Login Successfull!")
-                res.json(data);
-            } else {
-                res.json("Sorry! password is wrong");
-                console.log("Sorry! password is wrong")
+              
+                let payload={subject:data._id}
+                 let token=jwt.sign(payload,'secretKey')
+               
+                res.status(200).json({token,name:req.body.email});
+            }else{
+                res.status(401).json("Invalid Password!")
             }
 
 
 
-
         }
+
     });
 });
 
@@ -147,7 +163,7 @@ app.post("/api/afterlogin/", (req, res) => {
 //     console.log("inside login function ")
 // }
 
-app.listen(8000, function () {
+app.listen(8080, function () {
 
     console.log("server Started");
 })
